@@ -26,12 +26,6 @@ var cHeight;
 var cInnerWidth;
 var cInnerHeight;
 
-var barsSvg;
-var bWidth;
-var bHeight;
-var bInnerWidth;
-var bInnerHeight;
-
 var scatterSvg;
 var scWidth;
 var scHeight;
@@ -48,6 +42,7 @@ var selectedFilter = '';
 var uniqueLocations = new Set();
 var uniqueCuisines = new Set();
 var attributes;
+var timeseries_attributes;
 
 const green_color = "#69b3a2";
 
@@ -102,17 +97,8 @@ document.addEventListener('DOMContentLoaded', function () {
     scInnerWidth = scWidth - margin.left - margin.right;
     scInnerHeight = scHeight - margin.top - margin.bottom;
 
-    // reference bars svg and get its dimensions
-    barsSvg = d3.select('#bars_svg');
-    bWidth = +barsSvg.style('width').replace('px','');
-    bHeight = +barsSvg.style('height').replace('px',''); 
-
-    // margins for padding (bars)
-    bInnerWidth = bWidth - margin.left - margin.right;
-    bInnerHeight = bHeight - margin.top - margin.bottom;
-
     // load the csv and store it in an array
-    Promise.all([d3.csv('data/modified_final.csv')])
+    Promise.all([d3.csv('data/mod.csv')])
         .then(function (values) {
             //console.log('Loaded the output.csv');
             restaurantData = values[0];
@@ -128,7 +114,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 'comfort_non_emotional_count', 'average_positive','average_negative']; //need to add emotional and non emotional entity distributions
             // ,'emotional_keyword_count', 'non-emotional_keyword_count', 'average_positive', 'average_negative'
             //,
-            
+            timeseries_attributes = ['name','food_count_pos','ambience_count_pos','service_count_pos'
+            ,'comfort_count_pos','food_count_neg','ambience_count_neg','service_count_neg'
+            ,'comfort_count_neg', 'average_positive','average_negative', '2016_pos', '2017_pos', '2018_pos', '2019_pos', '2020_pos',
+            '2016_neg', '2017_neg', '2018_neg', '2019_neg', '2020_neg', 'total_positive_segments', 'total_negative_segments', 'total_segments'];
             matrix_data = restaurantData.map(item => {
                 const matrixItem = {};
                 attributes.forEach(attr => {
@@ -162,7 +151,7 @@ document.addEventListener('DOMContentLoaded', function () {
             generateKeywordsRadar(restaurantData);
 
             // calls function to generate cognitive view
-            generateCognitiveView(restaurantData);
+            generateCognitiveView(restaurantData, 0.005);
 
             // calls function to generate scatter plot
             generateScatterPlot(restaurantData);
@@ -254,24 +243,16 @@ function generateKeywordsRadar(data) {
     let ambience = 0
     let service = 0
     let comfort = 0
-
-    let food_max = data[0]
-    let ambience_max = data[0]
-    let service_max = data[0]
-    let comfort_max = data[0]
+    let max = 0
     
     for (var i = 0; i < data.length; i++){
+        // if(data[i]["listed_in(city)"] == location){
         restaurant_count++
-
-        if(parseFloat(data[i]["food_score_pos"]) > food_max["food_score_pos"]){food_max = data[i]}
-        if(parseFloat(data[i]["ambience_score_pos"]) > ambience_max["ambience_score_pos"]){ambience_max = data[i]}
-        if(parseFloat(data[i]["service_score_pos"]) > service_max["service_score_pos"]){service_max = data[i]}
-        if(parseFloat(data[i]["comfort_score_pos"]) > comfort_max["comfort_score_pos"]){comfort_max = data[i]}
-
         food += parseFloat(data[i]["food_score_pos"])
         ambience += parseFloat(data[i]["ambience_score_pos"])
         service += parseFloat(data[i]["service_score_pos"])
         comfort += parseFloat(data[i]["comfort_score_pos"])
+        // }
     }
 
     let radar_data = [{
@@ -291,7 +272,7 @@ function generateKeywordsRadar(data) {
 
     let radialScale = d3.scaleLinear()
         .domain([0,0.13])
-        .range([0,rWidth/5])
+        .range([0,100])
     let ticks = [0.02, 0.04, 0.06, 0.08, 0.1,0.12]
 
     radarSVG.selectAll("circle")
@@ -313,7 +294,6 @@ function generateKeywordsRadar(data) {
                 .attr("y", d => rHeight / 2 - radialScale(d))
                 .text(d => d.toString())
                 .style("font-size","8")
-                .style('text-anchor','middle')
         )
 
     function angleToCoordinate(angle, value){
@@ -323,7 +303,7 @@ function generateKeywordsRadar(data) {
     }
 
     let categoryData = categories.map((f,i) => {
-        let angle = (Math.PI/4) + (2*Math.PI*i / categories.length)
+        let angle = (Math.PI/2) + (2*Math.PI*i / categories.length)
         return{
             "name": f,
             "angle": angle,
@@ -349,7 +329,7 @@ function generateKeywordsRadar(data) {
             enter => enter.append("text")
                 .attr("x", d => d.label_coord.x)
                 .attr("y", d => d.label_coord.y)
-                .style("text-anchor",function(d,i){let x = ["start","end","end","start"]; return x[i]})
+                .style("text-anchor",function(d,i){let x = ["middle","end","middle","start"]; return x[i]})
                 .text(d => d.name)
         )
 
@@ -361,7 +341,7 @@ function generateKeywordsRadar(data) {
         let coords = []
         for(var i = 0; i <categories.length; i++){
             let cat_name = categories[i]
-            let angle = (Math.PI/4) + (2*Math.PI*i/categories.length)
+            let angle = (Math.PI/2) + (2*Math.PI*i/categories.length)
             coords.push(angleToCoordinate(angle,data_point[cat_name]))
         }
         return coords
@@ -380,160 +360,14 @@ function generateKeywordsRadar(data) {
             .attr("opacity",0.7)        //was ".6" changed to darken color
         )
 
-    let wordCount = getWordCount([food_max])
-    let topWords = getTopWords(wordCount)
-
-    var maxSize = d3.max(topWords, function(d){return d.size})
-    specificSize = 0.005*(20000/maxSize)
-
-    var layout1 = d3.layout.cloud()
-        .size([rWidth/2,rHeight/4])
-        .words(topWords.map(function(d){
-            return{text: d.word, size: d.size * specificSize};}))
-        .padding(5)
-        .rotate(function(){return ~~(Math.random()*2)*90})
-        .fontSize(function(d){return d.size})
-        .on("end",draw1);
-    layout1.start()
-
-    function draw1(words){
-
-        radarSVG.append('g')
-            .attr('transform','translate(' + 3*rWidth/4+','+rHeight/5+')')
-            .selectAll('text')
-            .data(words)
-            .enter()
-            .append('text')
-            .style('font-size', d=> d.size+'px')
-            .style("fill", green_color)
-            .attr("text-anchor", "middle")
-            .style("font-family", "Impact")
-            .attr("transform", function(d) {
-              return "translate(" + d.x + "," + d.y + ")rotate(" + d.rotate + ")";
-            })
-            .text(function(d) { return d.text; });
-            
-    }
-
-    wordCount = getWordCount([ambience_max])
-    topWords = getTopWords(wordCount)
-
-    maxSize = d3.max(topWords, function(d){return d.size})
-    specificSize = 0.005*(20000/maxSize)
-
-    var layout2 = d3.layout.cloud()
-        .size([rWidth/2,rHeight/4])
-        .words(topWords.map(function(d){
-            return{text: d.word, size: d.size * specificSize};}))
-        .padding(5)
-        .rotate(function(){return ~~(Math.random()*2)*90})
-        .fontSize(function(d){return d.size})
-        .on("end",draw2);
-    layout2.start()
-
-    function draw2(words){
-        
-        radarSVG.append('g')
-            .attr('transform','translate(' + rWidth/4 + ',' + rHeight/5 + ')')
-            .selectAll('text')
-            .data(words)
-            .enter()
-            .append('text')
-            .style('font-size', d=> d.size+'px')
-            .style("fill",green_color)
-            .attr("text-anchor", "middle")
-            .style("font-family", "Impact")
-            .attr("transform", function(d) {
-              return "translate(" + d.x + "," + d.y + ")rotate(" + d.rotate + ")";
-            })
-            .text(function(d) { return d.text; });
-            
-    }
-
-    wordCount = getWordCount([service_max])
-    topWords = getTopWords(wordCount)
-
-    maxSize = d3.max(topWords, function(d){return d.size})
-    specificSize = 0.005*(20000/maxSize)
-
-    var layout3 = d3.layout.cloud()
-        .size([rWidth/2,rHeight/4])
-        .words(topWords.map(function(d){
-            return{text: d.word, size: d.size * specificSize};}))
-        .padding(5)
-        .rotate(function(){return ~~(Math.random()*2)*90})
-        .fontSize(function(d){return d.size})
-        .on("end",draw3);
-    layout3.start()
-
-    function draw3(words){
-
-        radarSVG.append('g')
-            .attr('transform','translate(' + rWidth/4+','+3.15*rHeight/4+')')
-            .selectAll('text')
-            .data(words)
-            .enter()
-            .append('text')
-            .style('font-size', d=> d.size+'px')
-            .style('fill',green_color)
-            .attr("text-anchor", "middle")
-            .style("font-family", "Impact")
-            .attr("transform", function(d) {
-              return "translate(" + d.x + "," + d.y + ")rotate(" + d.rotate + ")";
-            })
-            .text(function(d) { return d.text; });
-            
-    }
-
-    wordCount = getWordCount([comfort_max])
-    topWords = getTopWords(wordCount)
-
-    maxSize = d3.max(topWords, function(d){return d.size})
-    specificSize = 0.005*(20000/maxSize)
-
-    var layout4 = d3.layout.cloud()
-        .size([rWidth/2,rHeight/4])
-        .words(topWords.map(function(d){
-            return{text: d.word, size: d.size * specificSize};}))
-        .padding(5)
-        .rotate(function(){return ~~(Math.random()*2)*90})
-        .fontSize(function(d){return d.size})
-        .on("end",draw4);
-    layout4.start()
-
-    function draw4(words){
-        
-        radarSVG.append('g')
-            .attr('transform','translate(' + 3*rWidth/4+','+3.15*rHeight/4+')')
-            .selectAll('text')
-            .data(words)
-            .enter()
-            .append('text')
-            .style('font-size', d=> d.size+'px')
-            .style('fill',green_color)
-            .attr("text-anchor", "middle")
-            .style("font-family", "Impact")
-            .attr("transform", function(d) {
-              return "translate(" + d.x + "," + d.y + ")rotate(" + d.rotate + ")";
-            })
-            .text(function(d) { return d.text; });
-            
-    }
     
 }
 
-function generateCognitiveView(data) {
+function generateCognitiveView(data, specificSize) {
     d3.select("#cognitiveView_svg").selectAll('*').remove();
-
-    // generate the bars above the word cloud
-    generateBars(data);
-    
     //calculating words for word cloud
     wordCount = getWordCount(data);
     topWords = getTopWords(wordCount);
-
-    var maxSize = d3.max(topWords, function(d) { return d.size; });
-    specificSize = 0.002 * (20000 / maxSize);
 
     // generate word cloud based off dictionary
     var layout = d3.layout.cloud()
@@ -567,7 +401,7 @@ function generateCognitiveView(data) {
             .enter().append("text")
             .style("font-size", function(d) { 
                 return d.size + "px"; })
-            .style("fill", "#d5a773")
+            .style("fill", green_color)
             .attr("text-anchor", "middle")
             .style("font-family", "Impact")
             .attr("transform", function(d) {
@@ -596,7 +430,7 @@ function scatterFilter(data) {
         return true;
     });
 }
-
+//////////////////////////////////////////////////////////
 function generateScatterPlot(data) {
     //console.log("scatter plot")
 
@@ -668,45 +502,82 @@ function generateScatterPlot(data) {
         .attr("cy", d => yScale(parseFloat(d["comfort_emotional_count"]) + parseFloat(d["service_emotional_count"]) + parseFloat(d["food_emotional_count"])))
         .attr("r", d => radiusScale(Math.abs(d.votes)))
         .style("fill", green_color);
+    console.log("end of scatter plot")
+}
+//////////////////////////////////////////////////////////
+function generateScatterPlot(data) {
+    //console.log("scatter plot")
 
+    // Remove any existing elements from the scatter plot SVG
+    scatterSvg.selectAll("*").remove();
 
-    //CREATING THE LEGEND
-
-    //Adding a seperate group for the legend
-    const legendGroup = scatterSvg.append("g")
-        //Setting it in the top left corner
-        .attr("transform", `translate(${70}, ${margin.top  + 20})`);
-
+    //console.log(data)
     
-    // Define the legend data
-    const legendData = [
-        { label: "High Popularity", radius: radiusScale.range()[1] / 2 },
-        { label: "Medium Popularity", radius: (radiusScale.range()[0] + radiusScale.range()[1]) / 4.5 },
-        { label: "Low Popularity", radius: radiusScale.range()[0] * 1.5}
-    ];
+    //filter out data that cannot be used/will throw errors
+    const filteredData = scatterFilter(data);
 
-    // Add legend circles
-    legendGroup.selectAll("circle")
-        .data(legendData)
+    // Create scales for the scatter plot
+    const xMin = d3.min(filteredData, d => d["approx_cost(for two people)"]);
+    const xMax = d3.max(filteredData, d => d["approx_cost(for two people)"]);
+    const yMin = d3.min(filteredData, d => parseFloat(d["comfort_emotional_count"]) + parseFloat(d["service_emotional_count"]) + parseFloat(d["food_emotional_count"]));
+    const yMax = d3.max(filteredData, d => parseFloat(d["comfort_emotional_count"]) + parseFloat(d["service_emotional_count"]) + parseFloat(d["food_emotional_count"]));
+
+    // Add some padding to the domain ranges
+    const xPadding = (xMax - xMin) * 0.1;
+    const yPadding = (yMax - yMin) * 0.1;
+
+    const xScale = d3.scaleLinear()
+        .domain([xMin - xPadding, xMax + xPadding])
+        .range([margin.left, scInnerWidth - margin.right]);
+
+    const yScale = d3.scaleLinear()
+        .domain([yMin - yPadding, yMax + yPadding])
+        .range([scInnerHeight - margin.bottom, margin.top + 40]);
+
+    // Create Exponential scale for the circle radius based on the number of reviews
+    const radiusScale = d3.scalePow()
+        .exponent(2)
+        .domain(d3.extent(filteredData, d => Math.abs(d.votes)))
+        .range([1.4, 30]);
+
+    // Define x and y axes
+    const xAxis = d3.axisBottom(xScale);
+    const yAxis = d3.axisLeft(yScale);
+
+    // Add x and y axes to the scatter plot SVG
+    scatterSvg.append("g")
+        .attr("transform", `translate(20, ${scInnerHeight - margin.bottom - 40})`)
+        .call(xAxis);
+
+    scatterSvg.append("g")
+        .attr("transform", `translate(${margin.left + 20}, -40)`)
+        .call(yAxis);
+
+    // Add x and y axis labels
+    scatterSvg.append("text")
+        .attr("x", scInnerWidth / 2)
+        .attr("y", scInnerHeight - margin.bottom / 2)
+        .attr("text-anchor", "middle")
+        .text("Approximate Cost (for two people)");
+
+    scatterSvg.append("text")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -scInnerHeight / 2)
+        .attr("y", margin.left / 2 + 1)
+        .attr("text-anchor", "middle")
+        .text("Emotional Score");
+
+    // Add the actual scatter plot points
+    const dots = scatterSvg.selectAll("circle")
+        .data(filteredData)
         .enter()
         .append("circle")
-        .attr("cx", 0)
-        .attr("cy", (d, i) => i * 30)
-        .attr("r", d => d.radius)
+        .attr("cx", d => xScale(d["approx_cost(for two people)"]))
+        .attr("cy", d => yScale(parseFloat(d["comfort_emotional_count"]) + parseFloat(d["service_emotional_count"]) + parseFloat(d["food_emotional_count"])))
+        .attr("r", d => radiusScale(Math.abs(d.votes)))
         .style("fill", green_color);
-
-    // Add legend labels
-    legendGroup.selectAll("text")
-        .data(legendData)
-        .enter()
-        .append("text")
-        .attr("x", 20)
-        .attr("y", (d, i) => i * 30 + 5)
-        .text(d => d.label);
-    
-    //console.log("end of scatter plot")
- }
-
+        //console.log("end of scatter plot")
+}
 
 function getWordCount(data) {
     // function to get words and corresponding word count for reviews in 'reviews_list'
@@ -774,8 +645,6 @@ function getTopWords(wordCount) {
         return { word: item[0], size: item[1].toString() };
     });
 
-    //console.log(topWords);
-
     return formattedWords;
 
 }
@@ -816,11 +685,9 @@ function changeCategory(selected) {
             return matrixItem;
         });
         (matrix_data);
-
-        generateSentimentMatrixView(matrix_data);
-        generateTimeSeries(restaurantData);
+        // generateTimeSeries(restaurantData);
         generateKeywordsRadar(restaurantData);
-        generateCognitiveView(restaurantData);
+        generateCognitiveView(restaurantData, 0.005);
         generateScatterPlot(restaurantData);
         reviews = getReviews(restaurantData);
         generateUCG(restaurantData);
@@ -837,6 +704,7 @@ function filter(selected) {
         data = restaurantData.filter(function(restaurant) {
             return restaurant.location == selectedFilter;
         });
+        sizing = 0.8;
     } else if (selectedCategory == 'Cuisine') {
         data = restaurantData.filter(function(restaurant) {
             // Split the cuisines string and trim each cuisine
@@ -844,6 +712,7 @@ function filter(selected) {
             // Check if the selected cuisine exists in the list of cuisines for this restaurant
             return cuisines.includes(selectedFilter);
         });
+        sizing = 0.005;
     }
 
     matrixData = data.map(item => {
@@ -853,11 +722,19 @@ function filter(selected) {
         });
         return matrixItem;
     });
+
+    timeData = data.map(item => {
+        const matrixItem = {};
+        timeseries_attributes.forEach(attr => {
+            matrixItem[attr] = item[attr];
+        });
+        return matrixItem;
+    });
     generateSentimentMatrixView(matrixData);
 
-    generateTimeSeries(data);
+    generateTimeSeries(timeData);
     generateKeywordsRadar(data);
-    generateCognitiveView(data);
+    generateCognitiveView(data, sizing);
     generateScatterPlot(data);
     reviews = getReviews(data);
     generateUCG(data);
@@ -874,99 +751,4 @@ function populateOptions(select, array) {
         optionElement.textContent = option;
         selectElement.appendChild(optionElement);
     });
-}
-
-function generateBars(data) {
-    let foodCount = 0;
-    let serviceCount = 0;
-    let ambienceCount = 0;
-    let comfortCount = 0;
-    
-    data.forEach(row => {
-        foodCount += parseInt(row.food_count_pos) + parseInt(row.food_count_neg) + parseInt(row.food_non_emotional_count);
-        serviceCount += parseInt(row.service_count_pos) + parseInt(row.service_count_neg) + parseInt(row.service_non_emotional_count);
-        ambienceCount += parseInt(row.ambience_count_pos) + parseInt(row.ambience_count_neg) + parseInt(row.ambience_non_emotional_count);
-        comfortCount += parseInt(row.comfort_count_pos) + parseInt(row.comfort_count_neg) + parseInt(row.comfort_non_emotional_count);
-    });
-
-    const total = foodCount + serviceCount + ambienceCount + comfortCount;
-    const foodPercentage = (foodCount / total) * 100;
-    const servicePercentage = (serviceCount / total) * 100;
-    const ambiencePercentage = (ambienceCount / total) * 100;
-    const comfortPercentage = (comfortCount / total) * 100;
-
-    //console.log("food", foodPercentage);
-    //console.log("service", servicePercentage);
-    //console.log("ambience", ambiencePercentage);
-    //console.log("comfortPercentage", comfortPercentage);
-
-    d3.select('#bars_svg').selectAll("*").remove();
-
-    const svg = d3.select('#bars_svg');
-
-    const labels = ["Food", "Service", "Ambience", "Comfort"];
-
-    // gray rectangles
-    svg.selectAll(".gray-rect")
-      .data(labels)
-      .enter()
-      .append("rect")
-      .attr("class", "gray-rect")
-      .attr("x", 90)
-      .attr("y", (d, i) => 7 + i * 30)
-      .attr("width", 270)
-      .attr("height", 7)
-      .attr("fill", "#ebeef5")
-      .attr("rx", 6)
-      .attr("ry", 6);
-    
-    // colored rectangles on top based off percentage (multiplied by 2.7 because the gray bars are 270px)
-    svg.append("rect")
-      .attr("x", 90)
-      .attr("y", 8)
-      .attr("width", foodPercentage * 2.7)
-      .attr("height", 6)
-      .attr("fill", "#d2a36e")
-      .attr("rx", 6)
-      .attr("ry", 6);
-    
-    svg.append("rect")
-      .attr("x", 90)
-      .attr("y", 37)
-      .attr("width", servicePercentage * 2.7)
-      .attr("height", 7)
-      .attr("fill", "#c1c19d")
-      .attr("rx", 6)
-      .attr("ry", 6);
-    
-    svg.append("rect")
-      .attr("x", 90)
-      .attr("y", 67)
-      .attr("width", ambiencePercentage * 2.7)
-      .attr("height", 7)
-      .attr("fill", "#a4aab4")
-      .attr("rx", 6)
-      .attr("ry", 6);
-    
-    svg.append("rect")
-      .attr("x", 90)
-      .attr("y", 97)
-      .attr("width", comfortPercentage * 2.7)
-      .attr("height", 7)
-      .attr("fill", "#535b66")
-      .attr("rx", 6)
-      .attr("ry", 6);
-    
-    // text labels for each bar
-    svg.selectAll(".category")
-      .data(labels)
-      .enter()
-      .append("text")
-      .attr("class", "category")
-      .attr("x", 25)
-      .attr("y", (d, i) => 15 + i * 30)
-      .attr("fill", "gray")
-      .attr("font-size", "12px")
-      .text(d => d);
-
 }
